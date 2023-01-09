@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "s3www.fullname" . }}
+  labels:
+    {{- include "s3www.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "s3www.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "s3www.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "s3www.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --endpoint
+            - {{ required "You must set .Values.s3www.endpoint to the URL of your S3 server. Try adding --set s3www.endpoint=https://s3.example.org to your Helm command" .Values.s3www.endpoint | quote }}
+            - --bucket
+            - {{ required "You must set .Values.s3www.bucket to the Bucket to serve the content from. Try adding --set s3www.bucket=my-bucket to your Helm command" .Values.s3www.bucket | quote }}
+          {{- with .Values.s3www.bucketPath }}
+            - --bucketPath
+            - {{ . | quote }}
+          {{- end }}
+          {{- if eq true .Values.s3www.useCache }}
+            - --use-cache
+          {{- with .Values.s3www.cacheTTL }}
+            - --cache-ttl
+            - {{ . }}
+          {{- end }}
+          {{- end }}
+            - --address
+            - "0.0.0.0:8080"
+          env:
+            - name: S3WWW_ACCESS_KEY
+             {{- if .Values.s3www.accessKey }}
+              value: {{ .Values.s3www.accessKey | quote }}
+             {{- else if and .Values.s3www.accessKeySecret .Values.s3www.accessKeySecretKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3www.accessKeySecret }}
+                  key: {{ .Values.s3www.accessKeySecretKey }}
+              {{- else }}
+              value: {{ required "You must set .Values.s3www.accessKey to the S3 Access key. Try adding --set s3www.accessKey=my-access-key to your Helm command" .Values.s3www.accessKey }}
+              {{- end }}
+            - name: S3WWW_SECRET_KEY
+             {{- if .Values.s3www.secretKey }}
+              value: {{ .Values.s3www.secretKey | quote }}
+             {{- else if and .Values.s3www.secretKeySecret .Values.s3www.secretKeySecretKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3www.secretKeySecret }}
+                  key: {{ .Values.s3www.secretKeySecretKey }}
+              {{- else }}
+              value: {{ required "You must set .Values.s3www.secretKey to the S3 Secret key. Try adding --set s3www.secretKey=my-secret-key to your Helm command" .Values.s3www.secretKey }}
+              {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # livenessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: http
+          # readinessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
